@@ -72,6 +72,7 @@ const dom = {
   intervalMinutes: document.querySelector("#intervalMinutes"),
   autoStartToggle: document.querySelector("#autoStartToggle"),
   notificationToggle: document.querySelector("#notificationToggle"),
+  notificationStatus: document.querySelector("#notificationStatus"),
   holidayToggle: document.querySelector("#holidayToggle"),
   customMessages: document.querySelector("#customMessages"),
   progressTitle: document.querySelector("#progressTitle"),
@@ -106,7 +107,9 @@ function loadState() {
     setupComplete: false,
     autoStart: true,
     holidayRest: true,
+    notificationWanted: false,
     notifications: false,
+    notificationPermission: "default",
     customMessages: "",
     dayOverrides: {},
     checkInDates: [],
@@ -128,6 +131,8 @@ function normalizeState(savedState) {
   savedState.days = savedState.days || {};
   savedState.dayOverrides = savedState.dayOverrides || {};
   savedState.checkInDates = savedState.checkInDates || [];
+  savedState.notificationWanted = Boolean(savedState.notificationWanted || savedState.notifications);
+  savedState.notificationPermission = savedState.notificationPermission || notificationPermission();
 
   Object.entries(savedState.days).forEach(([dateKey, record]) => {
     if ((record.moves || 0) >= dailyGoal && !savedState.checkInDates.includes(dateKey)) {
@@ -143,6 +148,39 @@ function normalizeState(savedState) {
 
 function saveState() {
   localStorage.setItem(storageKey, JSON.stringify(state));
+}
+
+function notificationPermission() {
+  if (!("Notification" in window)) return "unsupported";
+  return Notification.permission;
+}
+
+function isStandaloneApp() {
+  return Boolean(window.navigator.standalone || window.matchMedia("(display-mode: standalone)").matches);
+}
+
+function notificationStatusText() {
+  if (!state.notificationWanted) {
+    return "手机推送未开启。";
+  }
+
+  if (!("Notification" in window)) {
+    return "已保存推送偏好。iPhone 需要先用 Safari 添加到主屏幕，再从主屏幕图标打开后授权通知。";
+  }
+
+  if (!isStandaloneApp()) {
+    return "已保存推送偏好。iPhone 上建议添加到主屏幕后再授权通知。";
+  }
+
+  if (Notification.permission === "granted") {
+    return "手机推送已授权，到点会把当前提醒语推送出去。";
+  }
+
+  if (Notification.permission === "denied") {
+    return "已保存推送偏好，但系统通知权限被拒绝了，需要到系统设置里重新允许。";
+  }
+
+  return "已保存推送偏好，保存时会向系统请求通知权限。";
 }
 
 function minutesFromTime(value) {
@@ -377,7 +415,7 @@ function nextReminderDate() {
 
 async function showReminder() {
   setQuote();
-  if (state.notifications && "Notification" in window && Notification.permission === "granted") {
+  if (state.notificationWanted && "Notification" in window && Notification.permission === "granted") {
     new Notification("动了么", {
       body: dom.dialogQuote.textContent,
       tag: "move-reminder"
@@ -479,7 +517,9 @@ function render() {
   dom.workSchedule.value = state.workSchedule;
   dom.intervalMinutes.value = String(state.intervalMinutes);
   dom.autoStartToggle.checked = state.autoStart;
-  dom.notificationToggle.checked = state.notifications;
+  state.notificationPermission = notificationPermission();
+  dom.notificationToggle.checked = state.notificationWanted;
+  dom.notificationStatus.textContent = notificationStatusText();
   dom.holidayToggle.checked = state.holidayRest;
   dom.customMessages.value = state.customMessages;
   dom.activeWindow.textContent = `${scheduleLabel()} ${state.startTime}-${state.endTime}，午休 ${state.breakStart}-${state.breakEnd}`;
@@ -526,14 +566,26 @@ function render() {
 }
 
 async function requestNotifications() {
-  if (!("Notification" in window)) {
+  if (!state.notificationWanted) {
     state.notifications = false;
+    state.notificationPermission = notificationPermission();
     saveState();
     render();
-    return;
+    return false;
+  }
+
+  if (!("Notification" in window)) {
+    state.notificationWanted = true;
+    state.notifications = false;
+    state.notificationPermission = "unsupported";
+    saveState();
+    render();
+    return false;
   }
 
   const permission = await Notification.requestPermission();
+  state.notificationWanted = true;
+  state.notificationPermission = permission;
   state.notifications = permission === "granted";
   if (state.notifications) {
     new Notification("动了么已开启", {
@@ -543,6 +595,7 @@ async function requestNotifications() {
   }
   saveState();
   render();
+  return state.notifications;
 }
 
 dom.startMoveBtn.addEventListener("click", startMove);
@@ -569,12 +622,14 @@ dom.settingsForm.addEventListener("submit", async (event) => {
   state.autoStart = dom.autoStartToggle.checked;
   state.holidayRest = dom.holidayToggle.checked;
   state.customMessages = dom.customMessages.value;
+  state.notificationWanted = dom.notificationToggle.checked;
   state.setupComplete = true;
 
-  if (dom.notificationToggle.checked && !state.notifications) {
+  if (state.notificationWanted && notificationPermission() !== "granted") {
     await requestNotifications();
   } else {
-    state.notifications = dom.notificationToggle.checked;
+    state.notificationPermission = notificationPermission();
+    state.notifications = state.notificationWanted && state.notificationPermission === "granted";
     saveState();
   }
 
