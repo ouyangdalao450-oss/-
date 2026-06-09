@@ -49,13 +49,7 @@ const completionMessages = [
   "今天照顾自己的份额完成了，给现在的你一个温柔的肯定。"
 ];
 
-const achievements = [
-  { id: "first", title: "第一下", detail: "完成 1 次活动", test: (s) => s.totalMoves >= 1 },
-  { id: "three", title: "不卡壳", detail: "今天完成 3 次", test: (s) => s.todayDone >= 3 },
-  { id: "full_day", title: "整点守护者", detail: "今天工作时段全完成", test: (s) => s.requiredSlots > 0 && s.todayDone >= s.requiredSlots },
-  { id: "streak", title: "连续照顾", detail: "连续 3 天有活动", test: (s) => s.streakDays >= 3 }
-];
-
+const dailyGoal = 5;
 const storageKey = "move-hourly-state-v1";
 const ringLength = 326.7;
 
@@ -115,6 +109,8 @@ function loadState() {
     notifications: false,
     customMessages: "",
     dayOverrides: {},
+    checkInDates: [],
+    bestStreakDays: 0,
     totalMoves: 0,
     lastMoveDate: "",
     streakDays: 0,
@@ -122,10 +118,27 @@ function loadState() {
   };
 
   try {
-    return { ...fallback, ...JSON.parse(localStorage.getItem(storageKey)) };
+    return normalizeState({ ...fallback, ...JSON.parse(localStorage.getItem(storageKey)) });
   } catch {
-    return fallback;
+    return normalizeState(fallback);
   }
+}
+
+function normalizeState(savedState) {
+  savedState.days = savedState.days || {};
+  savedState.dayOverrides = savedState.dayOverrides || {};
+  savedState.checkInDates = savedState.checkInDates || [];
+
+  Object.entries(savedState.days).forEach(([dateKey, record]) => {
+    if ((record.moves || 0) >= dailyGoal && !savedState.checkInDates.includes(dateKey)) {
+      savedState.checkInDates.push(dateKey);
+    }
+  });
+
+  savedState.checkInDates = uniqueSortedDates(savedState.checkInDates);
+  savedState.bestStreakDays = Math.max(savedState.bestStreakDays || 0, calculateBestStreak(savedState.checkInDates));
+  savedState.streakDays = calculateCurrentStreak(savedState.checkInDates);
+  return savedState;
 }
 
 function saveState() {
@@ -203,6 +216,71 @@ function todayRecord() {
     state.days[todayKey] = { completedSlots: [], moves: 0 };
   }
   return state.days[todayKey];
+}
+
+function uniqueSortedDates(dates) {
+  return [...new Set(dates)].sort();
+}
+
+function dateFromKey(key) {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function daysBetween(previousKey, nextKey) {
+  const previous = dateFromKey(previousKey);
+  const next = dateFromKey(nextKey);
+  return Math.round((next - previous) / 86400000);
+}
+
+function calculateCurrentStreak(dates) {
+  const sorted = uniqueSortedDates(dates);
+  if (!sorted.length) return 0;
+
+  let streak = 0;
+  let cursor = new Date();
+
+  while (sorted.includes(localDateKey(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return streak;
+}
+
+function calculateBestStreak(dates) {
+  const sorted = uniqueSortedDates(dates);
+  if (!sorted.length) return 0;
+
+  let best = 1;
+  let streak = 1;
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    if (daysBetween(sorted[index - 1], sorted[index]) === 1) {
+      streak += 1;
+    } else {
+      streak = 1;
+    }
+    best = Math.max(best, streak);
+  }
+
+  return best;
+}
+
+function refreshCheckInStats() {
+  state.checkInDates = uniqueSortedDates(state.checkInDates || []);
+  state.streakDays = calculateCurrentStreak(state.checkInDates);
+  state.bestStreakDays = Math.max(state.bestStreakDays || 0, calculateBestStreak(state.checkInDates));
+}
+
+function markCheckInIfReady(record = todayRecord()) {
+  if (record.moves < dailyGoal) return;
+
+  const todayKey = localDateKey();
+  if (!state.checkInDates.includes(todayKey)) {
+    state.checkInDates.push(todayKey);
+  }
+  refreshCheckInStats();
 }
 
 function currentSlot() {
@@ -359,7 +437,7 @@ function completeMove() {
 
   record.moves += 1;
   state.totalMoves += 1;
-  updateStreak();
+  markCheckInIfReady(record);
   saveState();
   dom.startMoveBtn.disabled = false;
   dom.startMoveBtn.textContent = "手动活动 20 秒";
@@ -393,6 +471,7 @@ function updateStreak() {
 }
 
 function render() {
+  refreshCheckInStats();
   dom.startTime.value = state.startTime;
   dom.breakStart.value = state.breakStart;
   dom.breakEnd.value = state.breakEnd;
@@ -406,35 +485,35 @@ function render() {
   dom.activeWindow.textContent = `${scheduleLabel()} ${state.startTime}-${state.endTime}，午休 ${state.breakStart}-${state.breakEnd}`;
   dom.dayOverrideBtn.textContent = isWorkingDay() ? "今天休息" : "今天工作";
 
-  const slots = getSlots();
   const record = todayRecord();
-  const done = record.completedSlots.length;
-  const required = slots.length;
-  const completedToday = state.setupComplete && required > 0 && done >= required;
-  dom.progressTitle.textContent = !state.setupComplete ? "待设置" : (isWorkingDay() ? `${done} / ${required} 次` : "今天休息");
+  const done = Math.min(record.moves, dailyGoal);
+  const completedToday = state.setupComplete && isWorkingDay() && record.moves >= dailyGoal;
+  dom.progressTitle.textContent = !state.setupComplete ? "待设置" : (isWorkingDay() ? `${done} / ${dailyGoal} 次` : "今天休息");
   dom.completionMessage.textContent = completedToday ? completionMessage() : "";
   dom.completionMessage.hidden = !completedToday;
-  dom.progressBar.style.width = required ? `${Math.min(100, (done / required) * 100)}%` : "0%";
+  dom.progressBar.style.width = state.setupComplete && isWorkingDay() ? `${Math.min(100, (done / dailyGoal) * 100)}%` : "0%";
 
-  dom.slotGrid.innerHTML = slots.map((slot) => {
-    const isDone = record.completedSlots.includes(slot);
-    return `<div class="slot ${isDone ? "done" : ""}"><strong>${slot}</strong><span>${isDone ? "已活动" : "待完成"}</span></div>`;
+  dom.slotGrid.innerHTML = Array.from({ length: dailyGoal }, (_, index) => {
+    const count = index + 1;
+    const isDone = record.moves >= count;
+    return `<div class="slot check-slot ${isDone ? "done" : ""}"><strong>${count}</strong><span>${isDone ? "已完成" : "待活动"}</span></div>`;
   }).join("");
 
-  const summary = {
-    totalMoves: state.totalMoves,
-    todayDone: done,
-    requiredSlots: required,
-    streakDays: state.streakDays
-  };
+  const totalCheckIns = state.checkInDates.length;
+  const checkedInToday = state.checkInDates.includes(localDateKey());
+  const checkInCards = [
+    { title: "已坚持", value: `${totalCheckIns} 天`, detail: checkedInToday ? "今天已签到" : "满 5 次自动签到" },
+    { title: "连续坚持", value: `${state.streakDays} 天`, detail: state.streakDays > 0 ? "保持得很稳" : "今天完成后开始计算" },
+    { title: "最长连续", value: `${state.bestStreakDays || 0} 天`, detail: "慢慢攒起来的记录" },
+    { title: "累计活动", value: `${state.totalMoves} 次`, detail: "每一次都算数" }
+  ];
 
-  dom.achievementGrid.innerHTML = achievements.map((achievement) => {
-    const unlocked = achievement.test(summary);
+  dom.achievementGrid.innerHTML = checkInCards.map((card) => {
     return `
-      <div class="achievement ${unlocked ? "unlocked" : ""}">
-        <b>${unlocked ? "✓" : "·"}</b>
-        <strong>${achievement.title}</strong>
-        <span>${achievement.detail}</span>
+      <div class="achievement unlocked">
+        <b>${card.value}</b>
+        <strong>${card.title}</strong>
+        <span>${card.detail}</span>
       </div>
     `;
   }).join("");

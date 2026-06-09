@@ -467,22 +467,23 @@ blockquote {
   border-radius: 8px;
   padding: 14px;
   background: #fffdf8;
-  opacity: 0.62;
+  opacity: 1;
 }
 
 .achievement b {
-  display: grid;
+  display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+  min-width: 64px;
+  min-height: 34px;
+  border-radius: 999px;
   margin-bottom: 12px;
+  padding: 0 12px;
   background: #e4ebe7;
-  color: var(--muted);
+  color: var(--brand-deep);
+  font-size: 1rem;
 }
 
 .achievement.unlocked {
-  opacity: 1;
   border-color: #dfc676;
   background: #fff7df;
 }
