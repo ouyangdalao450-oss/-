@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#12856f">
+    <title>动了么</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar" aria-label="今日状态">
+        <div>
+          <p class="eyebrow">动了么</p>
+          <h1>坐久了，轻轻动一下</h1>
+        </div>
+        <div class="top-actions">
+          <div class="status-pill" id="reminderState">未开启</div>
+          <button class="ghost compact" id="openSettingsBtn" type="button">设置</button>
+        </div>
+      </section>
+
+      <section class="dashboard" aria-label="活动面板">
+        <div class="focus-panel">
+          <div class="focus-copy">
+            <p class="panel-label">下一次提醒</p>
+            <strong id="nextReminder">设置后开始</strong>
+            <span id="activeWindow">工作时间 09:00-18:00</span>
+          </div>
+          <div class="timer-ring" aria-live="polite">
+            <svg viewBox="0 0 120 120" role="img" aria-label="20 秒活动倒计时">
+              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+              <circle class="ring-progress" id="timerRing" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="timer-face">
+              <span id="timerValue">20</span>
+              <small>秒</small>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="startMoveBtn" type="button">手动活动 20 秒</button>
+            <button class="icon-button" id="testReminderBtn" type="button" aria-label="立即提醒">
+              <span aria-hidden="true">!</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="quote-panel">
+          <p class="panel-label">这次提醒</p>
+          <blockquote id="quoteText">乖乖，起来接一杯水吧，让身体也换一口新鲜空气。</blockquote>
+          <button class="text-button" id="newQuoteBtn" type="button">换一句</button>
+        </div>
+      </section>
+
+      <section class="progress-section" aria-label="今日进度">
+        <div class="section-heading">
+          <div>
+            <p class="panel-label">今日进度</p>
+            <h2 id="progressTitle">0 / 9 次</h2>
+          </div>
+          <button class="ghost" id="dayOverrideBtn" type="button">今天休息</button>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+          <span id="progressBar"></span>
+        </div>
+        <p class="completion-message" id="completionMessage" hidden></p>
+        <div class="slot-grid" id="slotGrid"></div>
+      </section>
+
+      <section class="achievement-section" aria-label="成就">
+        <div class="section-heading">
+          <div>
+            <p class="panel-label">成就</p>
+            <h2>慢慢攒出来的胜利</h2>
+          </div>
+        </div>
+        <div class="achievement-grid" id="achievementGrid"></div>
+      </section>
+    </main>
+
+    <dialog id="settingsDialog">
+      <form class="dialog-body settings-form" id="settingsForm">
+        <div class="setup-hero">
+          <div>
+            <p class="panel-label">第一次打开</p>
+            <h2>把提醒调成适合你的节奏</h2>
+          </div>
+          <div class="setup-preview" aria-hidden="true">
+            <span>20 秒</span>
+            <small>轻轻活动</small>
+          </div>
+        </div>
+        <div class="settings-grid" aria-label="提醒设置">
+        <label class="field">
+          <span>上班时间</span>
+          <input id="startTime" type="time" value="09:00">
+        </label>
+        <label class="field">
+          <span>午休开始</span>
+          <input id="breakStart" type="time" value="12:00">
+        </label>
+        <label class="field">
+          <span>午休结束</span>
+          <input id="breakEnd" type="time" value="13:00">
+        </label>
+        <label class="field">
+          <span>下班时间</span>
+          <input id="endTime" type="time" value="18:00">
+        </label>
+        <label class="field">
+          <span>休息制度</span>
+          <select id="workSchedule">
+            <option value="double" selected>双休</option>
+            <option value="single">单休</option>
+            <option value="none">无固定休息</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>提醒间隔</span>
+          <select id="intervalMinutes">
+            <option value="60" selected>每 1 小时</option>
+            <option value="45">每 45 分钟</option>
+            <option value="30">每 30 分钟</option>
+            <option value="15">每 15 分钟</option>
+          </select>
+        </label>
+        <label class="switch-field">
+          <span>免点击完成</span>
+          <input id="autoStartToggle" type="checkbox" checked>
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <label class="switch-field">
+          <span>手机推送</span>
+          <input id="notificationToggle" type="checkbox">
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <label class="switch-field">
+          <span>节假日休息</span>
+          <input id="holidayToggle" type="checkbox" checked>
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        </div>
+
+        <div class="message-section" aria-label="提醒语">
+          <p class="panel-label">提醒语</p>
+          <textarea id="customMessages" rows="5" placeholder="每行一句，例如：去接杯水，顺便看看窗外。"></textarea>
+        </div>
+
+        <div class="action-row">
+          <button class="primary" id="saveSettingsBtn" type="submit">保存并开始</button>
+          <button class="ghost" id="closeSettingsBtn" value="cancel" type="button">取消</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reminderDialog">
+      <form method="dialog" class="dialog-body">
+        <p class="panel-label">休息一下</p>
+        <h2>轻轻活动 20 秒</h2>
+        <p id="dialogQuote">乖乖，起来接一杯水吧，让身体也换一口新鲜空气。</p>
+        <div class="mini-countdown"><span id="dialogTimerValue">20</span> 秒后自动记录</div>
+        <div class="action-row">
+          <button class="primary" id="dialogStartBtn" value="start" type="button">现在动一下</button>
+          <button class="ghost" id="laterBtn" value="later" type="submit">等一会儿</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
