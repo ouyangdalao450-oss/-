@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: donglema-push-server
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_CONTACT_EMAIL
+        sync: false
+      - key: ALLOWED_ORIGIN
+        value: https://ouyangdalao450-oss.github.io

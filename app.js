@@ -52,6 +52,7 @@ const completionMessages = [
 const dailyGoal = 5;
 const storageKey = "move-hourly-state-v1";
 const ringLength = 326.7;
+const pushServerUrl = "";
 
 const dom = {
   reminderState: document.querySelector("#reminderState"),
@@ -160,6 +161,10 @@ function isStandaloneApp() {
 }
 
 function notificationStatusText() {
+  if (!pushServerUrl) {
+    return "锁屏后台推送需要先部署推送后端。部署后把服务地址填进 app.js 的 pushServerUrl。";
+  }
+
   if (!state.notificationWanted) {
     return "手机推送未开启。";
   }
@@ -173,7 +178,7 @@ function notificationStatusText() {
   }
 
   if (Notification.permission === "granted") {
-    return "手机通知已授权。当前版本需要 App 正在运行时提醒；锁屏定时推送需要后端服务。";
+    return "手机通知已授权，后端会按工作时间推送提醒语。";
   }
 
   if (Notification.permission === "denied") {
@@ -561,7 +566,17 @@ function render() {
 }
 
 async function requestNotifications() {
+  if (!pushServerUrl) {
+    state.notificationWanted = true;
+    state.notifications = false;
+    state.notificationPermission = notificationPermission();
+    saveState();
+    render();
+    return false;
+  }
+
   if (!state.notificationWanted) {
+    await unsubscribeFromPushServer();
     state.notifications = false;
     state.notificationPermission = notificationPermission();
     saveState();
@@ -583,15 +598,85 @@ async function requestNotifications() {
   state.notificationPermission = permission;
   state.notifications = permission === "granted";
   if (state.notifications) {
+    await subscribeToPushServer();
     await showAppNotification(
       "动了么已开启",
-      warmAddress("这是一条测试通知。之后 App 运行时会把提醒语发给你。"),
+      warmAddress("这是一条测试通知。之后会按工作时间把提醒语推送给你。"),
       "move-reminder-enabled"
     );
   }
   saveState();
   render();
   return state.notifications;
+}
+
+async function subscribeToPushServer() {
+  if (!pushServerUrl || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return false;
+  }
+
+  const publicKeyResponse = await fetch(`${pushServerUrl}/api/vapid-public-key`);
+  if (!publicKeyResponse.ok) return false;
+
+  const { publicKey } = await publicKeyResponse.json();
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(publicKey)
+  });
+
+  const response = await fetch(`${pushServerUrl}/api/subscribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      subscription,
+      settings: {
+        startTime: state.startTime,
+        breakStart: state.breakStart,
+        breakEnd: state.breakEnd,
+        endTime: state.endTime,
+        workSchedule: state.workSchedule,
+        intervalMinutes: state.intervalMinutes
+      },
+      messages: [...quotes, ...state.customMessages.split("\n").map((item) => item.trim()).filter(Boolean)],
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai"
+    })
+  });
+
+  if (response.ok) {
+    await fetch(`${pushServerUrl}/api/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subscription,
+        body: warmAddress("这是一条测试推送。之后锁屏时也会按工作时间提醒你。")
+      })
+    });
+  }
+
+  return response.ok;
+}
+
+async function unsubscribeFromPushServer() {
+  if (!pushServerUrl || !("serviceWorker" in navigator)) return;
+
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return;
+
+  await fetch(`${pushServerUrl}/api/unsubscribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: subscription.endpoint })
+  }).catch(() => {});
+  await subscription.unsubscribe();
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 }
 
 async function showAppNotification(title, body, tag) {
@@ -650,6 +735,11 @@ dom.settingsForm.addEventListener("submit", async (event) => {
   } else {
     state.notificationPermission = notificationPermission();
     state.notifications = state.notificationWanted && state.notificationPermission === "granted";
+    if (state.notifications) {
+      await subscribeToPushServer();
+    } else if (!state.notificationWanted) {
+      await unsubscribeFromPushServer();
+    }
     saveState();
   }
 
