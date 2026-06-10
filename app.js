@@ -173,7 +173,7 @@ function notificationStatusText() {
   }
 
   if (Notification.permission === "granted") {
-    return "手机推送已授权，到点会把当前提醒语推送出去。";
+    return "手机通知已授权。当前版本需要 App 正在运行时提醒；锁屏定时推送需要后端服务。";
   }
 
   if (Notification.permission === "denied") {
@@ -415,12 +415,7 @@ function nextReminderDate() {
 
 async function showReminder() {
   setQuote();
-  if (state.notificationWanted && "Notification" in window && Notification.permission === "granted") {
-    new Notification("动了么", {
-      body: dom.dialogQuote.textContent,
-      tag: "move-reminder"
-    });
-  }
+  await showAppNotification("动了么", dom.dialogQuote.textContent, "move-reminder");
 
   if (!dom.reminderDialog.open) {
     dom.reminderDialog.showModal();
@@ -588,14 +583,39 @@ async function requestNotifications() {
   state.notificationPermission = permission;
   state.notifications = permission === "granted";
   if (state.notifications) {
-    new Notification("动了么已开启", {
-      body: warmAddress("之后到点会把提醒语推送给你。手机上请把网页添加到主屏幕并允许通知。"),
-      tag: "move-reminder-enabled"
-    });
+    await showAppNotification(
+      "动了么已开启",
+      warmAddress("这是一条测试通知。之后 App 运行时会把提醒语发给你。"),
+      "move-reminder-enabled"
+    );
   }
   saveState();
   render();
   return state.notifications;
+}
+
+async function showAppNotification(title, body, tag) {
+  if (!state.notificationWanted || !("Notification" in window) || Notification.permission !== "granted") {
+    return false;
+  }
+
+  const options = {
+    body,
+    tag,
+    icon: "icon.svg",
+    badge: "icon.svg"
+  };
+
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, options);
+      return true;
+    } catch {}
+  }
+
+  new Notification(title, options);
+  return true;
 }
 
 dom.startMoveBtn.addEventListener("click", startMove);
