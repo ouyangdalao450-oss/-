@@ -598,12 +598,17 @@ async function requestNotifications() {
   state.notificationPermission = permission;
   state.notifications = permission === "granted";
   if (state.notifications) {
-    await subscribeToPushServer();
-    await showAppNotification(
-      "动了么已开启",
-      warmAddress("这是一条测试通知。之后会按工作时间把提醒语推送给你。"),
-      "move-reminder-enabled"
-    );
+    try {
+      await subscribeToPushServer();
+      await showAppNotification(
+        "动了么已开启",
+        warmAddress("这是一条测试通知。之后会按工作时间把提醒语推送给你。"),
+        "move-reminder-enabled"
+      );
+    } catch (error) {
+      console.error("Push setup failed", error);
+      state.notifications = false;
+    }
   }
   saveState();
   render();
@@ -620,10 +625,13 @@ async function subscribeToPushServer() {
 
   const { publicKey } = await publicKeyResponse.json();
   const registration = await navigator.serviceWorker.ready;
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey)
-  });
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey)
+    });
+  }
 
   const response = await fetch(`${pushServerUrl}/api/subscribe`, {
     method: "POST",
@@ -729,23 +737,27 @@ dom.settingsForm.addEventListener("submit", async (event) => {
   state.customMessages = dom.customMessages.value;
   state.notificationWanted = dom.notificationToggle.checked;
   state.setupComplete = true;
+  state.notificationPermission = notificationPermission();
+  state.notifications = state.notificationWanted && state.notificationPermission === "granted";
+  saveState();
+  dom.settingsDialog.close();
+  setQuote();
+  render();
 
-  if (state.notificationWanted && notificationPermission() !== "granted") {
-    await requestNotifications();
-  } else {
-    state.notificationPermission = notificationPermission();
-    state.notifications = state.notificationWanted && state.notificationPermission === "granted";
-    if (state.notifications) {
+  try {
+    if (state.notificationWanted && state.notificationPermission !== "granted") {
+      await requestNotifications();
+    } else if (state.notifications) {
       await subscribeToPushServer();
     } else if (!state.notificationWanted) {
       await unsubscribeFromPushServer();
     }
+  } catch (error) {
+    console.error("Notification sync failed", error);
+    state.notifications = false;
     saveState();
+    render();
   }
-
-  dom.settingsDialog.close();
-  setQuote();
-  render();
 });
 
 dom.closeSettingsBtn.addEventListener("click", () => {
