@@ -1,6 +1,6 @@
 name = "donglema-push-worker"
 main = "src/index.js"
-compatibility_date = "2026-06-12"
+compatibility_date = "2026-06-11"
 
 [triggers]
 crons = ["* * * * *"]
