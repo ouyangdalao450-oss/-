@@ -52,7 +52,7 @@ const completionMessages = [
 const dailyGoal = 5;
 const storageKey = "move-hourly-state-v1";
 const ringLength = 326.7;
-const pushServerUrl = "";
+const pushServerUrl = "https://donglema-push-worker.ouyangdalao450.workers.dev";
 
 const dom = {
   reminderState: document.querySelector("#reminderState"),

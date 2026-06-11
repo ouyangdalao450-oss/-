@@ -5,6 +5,11 @@ compatibility_date = "2026-06-11"
 [triggers]
 crons = ["* * * * *"]
 
+[vars]
+ALLOWED_ORIGIN = "https://ouyangdalao450-oss.github.io"
+VAPID_CONTACT_EMAIL = "mailto:ouyangdalao450@gmail.com"
+VAPID_PUBLIC_KEY = "BPnTvrzLFxjkh1TUHWZkYIoC_zT_bZKHh3QqUMxFpveSiy0xE5hTv9Eh3Gcew-xxKQmP5sm9S2ETFQplk2CdHIs"
+
 [[kv_namespaces]]
 binding = "SUBSCRIPTIONS"
 id = "8d233c43a2eb4b79a4f41e3e59817fa3"

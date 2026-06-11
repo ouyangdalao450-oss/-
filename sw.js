@@ -1,4 +1,4 @@
-const cacheName = "move-hourly-v11";
+const cacheName = "move-hourly-v12";
 const assets = [
   ".",
   "index.html",
